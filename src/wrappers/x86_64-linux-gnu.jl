@@ -41,30 +41,8 @@ const openssl_splitpath = ["bin", "openssl"]
 # This will be filled out by __init__() for all products, as it must be done at runtime
 openssl_path = ""
 
-# openssl-specific global declaration
-function openssl(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        LIBPATH_base = get(ENV, LIBPATH_env, expanduser(LIBPATH_default))
-        if !isempty(LIBPATH_base)
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', LIBPATH_base)
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(openssl_path)
-    end
-end
-
+openssl(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) =
+    executable_wrapper(f, openssl_path, PATH, LIBPATH, LIBPATH_env, LIBPATH_default, ':', adjust_PATH, adjust_LIBPATH)
 
 """
 Open all libraries
@@ -74,29 +52,17 @@ function __init__()
 
     # Initialize PATH and LIBPATH environment variable listings
     global PATH_list, LIBPATH_list
-    global libcrypto_path = normpath(joinpath(artifact_dir, libcrypto_splitpath...))
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libcrypto_handle = dlopen(libcrypto_path)
-    push!(LIBPATH_list, dirname(libcrypto_path))
+    global openssl_path = get_exe_path!(PATH_list, artifact_dir, openssl_splitpath)
 
-    global libssl_path = normpath(joinpath(artifact_dir, libssl_splitpath...))
+    global libssl_path, libssl_handle
+    libssl_path, libssl_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libssl_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libssl_handle = dlopen(libssl_path)
-    push!(LIBPATH_list, dirname(libssl_path))
+    global libcrypto_path, libcrypto_handle
+    libcrypto_path, libcrypto_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libcrypto_splitpath)
 
-    global openssl_path = normpath(joinpath(artifact_dir, openssl_splitpath...))
-
-    push!(PATH_list, dirname(openssl_path))
-    # Filter out duplicate and empty entries in our PATH and LIBPATH entries
-    filter!(!isempty, unique!(PATH_list))
-    filter!(!isempty, unique!(LIBPATH_list))
-    global PATH = join(PATH_list, ':')
-    global LIBPATH = join(vcat(LIBPATH_list, [joinpath(Sys.BINDIR, Base.LIBDIR, "julia"), joinpath(Sys.BINDIR, Base.LIBDIR)]), ':')
-
+    global PATH, LIBPATH
+    PATH, LIBPATH = cleanup_path_libpath!(PATH_list, LIBPATH_list, ':')
     
 end  # __init__()
 

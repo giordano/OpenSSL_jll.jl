@@ -22,7 +22,7 @@ if VERSION < v"1.3.0-rc4"
     error("Unable to import OpenSSL_jll on Julia versions older than 1.3!")
 end
 
-using Pkg, Pkg.BinaryPlatforms, Pkg.Artifacts, Libdl
+using Pkg, Pkg.BinaryPlatforms, Pkg.Artifacts, Libdl, JLLWrappers
 import Base: UUID
 
 # We put these inter-JLL-package API values here so that they are always defined, even if there
@@ -31,17 +31,17 @@ const PATH_list = String[]
 const LIBPATH_list = String[]
 
 # Load Artifacts.toml file
-artifacts_toml = joinpath(@__DIR__, "..", "Artifacts.toml")
+artifacts_toml = get_artifacts_toml(@__DIR__)
 
 # Extract all platforms
-artifacts = Pkg.Artifacts.load_artifacts_toml(artifacts_toml; pkg_uuid=UUID("458c3c95-2e84-50aa-8efc-19380b2a3a95"))
-platforms = [Pkg.Artifacts.unpack_platform(e, "OpenSSL", artifacts_toml) for e in artifacts["OpenSSL"]]
+artifacts = get_artifacts(artifacts_toml, UUID("458c3c95-2e84-50aa-8efc-19380b2a3a95"))
+platforms = get_platforms("OpenSSL", artifacts_toml, artifacts)
 
 # Filter platforms based on what wrappers we've generated on-disk
-filter!(p -> isfile(joinpath(@__DIR__, "wrappers", replace(triplet(p), "arm-" => "armv7l-") * ".jl")), platforms)
+cleanup_platforms!(@__DIR__, platforms)
 
 # From the available options, choose the best platform
-best_platform = select_platform(Dict(p => triplet(p) for p in platforms))
+best_platform = select_best_platform(platforms)
 
 # Silently fail if there's no binaries for this platform
 if best_platform === nothing
